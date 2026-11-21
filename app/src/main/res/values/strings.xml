@@ -9,4 +9,6 @@
     <string name="cd_add_reference">Attach Reference Photo</string>
     <string name="cd_generated_viewport">Synthesized Studio Frame</string>
     <string name="cd_atelier_backdrop">Atelier Studio Stage Backdrop</string>
+    <string name="sign_in_with_google">Sign in with Google</string>
+    <string name="sign_out">Sign out</string>
 </resources>

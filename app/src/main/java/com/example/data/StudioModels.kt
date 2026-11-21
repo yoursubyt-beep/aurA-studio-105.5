@@ -102,7 +102,8 @@ data class StoryboardScene(
     val wardrobePrompt: String,
     val status: StoryboardStatus = StoryboardStatus.QUEUED,
     val imagePath: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val cloudDocId: String? = null
 )
 
 sealed interface SynthesisUiState {

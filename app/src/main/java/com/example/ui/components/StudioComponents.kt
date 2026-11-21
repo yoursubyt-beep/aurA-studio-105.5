@@ -555,8 +555,11 @@ fun DirectorPresetSheet(
 @Composable
 fun SettingsSheet(
     preferences: StudioPreferences,
+    userDisplayName: String?,
+    userEmail: String?,
     onSelectModel: (GeminiImageModelOption) -> Unit,
     onToggleAutoRefine: (Boolean) -> Unit,
+    onSignOut: () -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(
@@ -570,7 +573,7 @@ fun SettingsSheet(
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("Gemini Synthesis Engine", style = MaterialTheme.typography.headlineSmall)
+            Text("Studio Engine & Cloud Account", style = MaterialTheme.typography.headlineSmall)
 
             Surface(
                 shape = MaterialTheme.shapes.medium,
@@ -585,16 +588,35 @@ fun SettingsSheet(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = EmeraldStatus)
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Firebase AI Logic + App Check Active",
+                            text = userDisplayName?.takeIf { it.isNotBlank() } ?: "Google Account Connected",
                             style = MaterialTheme.typography.titleSmall,
                             color = EmeraldStatus
                         )
                         Text(
-                            "Secured via App Check attestation without client-side API keys.",
+                            text = buildString {
+                                if (!userEmail.isNullOrBlank()) append("$userEmail • ")
+                                append("Firestore Sync & App Check Active")
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = ObsidianNoir
+                        )
+                    }
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            onDismiss()
+                            onSignOut()
+                        },
+                        border = BorderStroke(1.dp, TerracottaRose),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.testTag("sign_out_button")
+                    ) {
+                        Text(
+                            text = "Sign out",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TerracottaRose,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }

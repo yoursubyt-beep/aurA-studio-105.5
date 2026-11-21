@@ -1,0 +1,124 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated Aura Studio creator profile and synced preferences.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the profile owner."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Creator display name."
+        },
+        "modelId": {
+          "type": "string",
+          "description": "Preferred Gemini image generation model ID."
+        },
+        "autoSafeRefine": {
+          "type": "boolean",
+          "description": "Whether prompts are automatically refined for editorial compatibility."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "displayName", "modelId", "autoSafeRefine", "createdAt", "updatedAt"]
+    },
+    "CustomCostume": {
+      "title": "CustomCostume",
+      "description": "User-authored costume or 4-axis matrix silhouette preset.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the costume owner."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short costume title."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Full costume and fabric layering description."
+        },
+        "category": {
+          "type": "string",
+          "description": "Costume category identifier."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "title", "prompt", "category", "createdAt", "updatedAt"]
+    },
+    "StoryboardCloudScene": {
+      "title": "StoryboardCloudScene",
+      "description": "User-authored sequential storyboard scene definition synced to Firestore.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the scene owner."
+        },
+        "orderIndex": {
+          "type": "integer",
+          "description": "1-based sequential order of the scene."
+        },
+        "wardrobeTitle": {
+          "type": "string",
+          "description": "Display title of the wardrobe assigned to this scene."
+        },
+        "wardrobePrompt": {
+          "type": "string",
+          "description": "Wardrobe prompt snippet."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Full compiled prompt for this scene."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when queued (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "orderIndex", "wardrobeTitle", "wardrobePrompt", "prompt", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Per-user creator profile and synced studio engine preferences."
+    },
+    "/users/{userId}/costumes/{costumeId}": {
+      "schema": { "$ref": "#/entities/CustomCostume" },
+      "description": "Per-user custom costumes and saved 4-axis wardrobe combinations."
+    },
+    "/users/{userId}/storyboard_scenes/{sceneId}": {
+      "schema": { "$ref": "#/entities/StoryboardCloudScene" },
+      "description": "Per-user sequential storyboard beats synced across sessions."
+    }
+  }
+}

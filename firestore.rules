@@ -1,0 +1,143 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.userId is string &&
+             data.userId == userId &&
+             data.displayName is string &&
+             data.displayName.size() >= 1 &&
+             data.displayName.size() <= 80 &&
+             data.modelId is string &&
+             data.modelId in ['gemini-nano-banana-2.1', 'gemini-3-pro-image', 'gemini-3.1-flash-lite-image'] &&
+             data.autoSafeRefine is bool &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function isValidCustomCostume(data, userId) {
+      return data.userId is string &&
+             data.userId == userId &&
+             data.title is string &&
+             data.title.size() >= 1 &&
+             data.title.size() <= 120 &&
+             data.prompt is string &&
+             data.prompt.size() >= 3 &&
+             data.prompt.size() <= 1200 &&
+             data.category is string &&
+             data.category in ['CUSTOM', 'SILHOUETTE', 'LAYERED', 'MIDRIFF', 'LIMBS', 'HERITAGE'] &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function isValidStoryboardScene(data, userId) {
+      return data.userId is string &&
+             data.userId == userId &&
+             data.orderIndex is int &&
+             data.orderIndex >= 1 &&
+             data.orderIndex <= 500 &&
+             data.wardrobeTitle is string &&
+             data.wardrobeTitle.size() >= 1 &&
+             data.wardrobeTitle.size() <= 140 &&
+             data.wardrobePrompt is string &&
+             data.wardrobePrompt.size() >= 1 &&
+             data.wardrobePrompt.size() <= 1200 &&
+             data.prompt is string &&
+             data.prompt.size() >= 3 &&
+             data.prompt.size() <= 3000 &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'modelId', 'autoSafeRefine', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'modelId', 'autoSafeRefine', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming(), userId);
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidUserProfile(incoming(), userId) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'modelId', 'autoSafeRefine', 'updatedAt']);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /costumes/{costumeId} {
+        allow get: if isOwner(userId) && isValidId(costumeId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(costumeId) &&
+                         incoming().keys().hasAll(['userId', 'title', 'prompt', 'category', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'prompt', 'category', 'createdAt', 'updatedAt']) &&
+                         isValidCustomCostume(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(costumeId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidCustomCostume(incoming(), userId) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'prompt', 'category', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(costumeId);
+      }
+
+      match /storyboard_scenes/{sceneId} {
+        allow get: if isOwner(userId) && isValidId(sceneId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(sceneId) &&
+                         incoming().keys().hasAll(['userId', 'orderIndex', 'wardrobeTitle', 'wardrobePrompt', 'prompt', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'orderIndex', 'wardrobeTitle', 'wardrobePrompt', 'prompt', 'createdAt', 'updatedAt']) &&
+                         isValidStoryboardScene(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(sceneId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidStoryboardScene(incoming(), userId) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['orderIndex', 'wardrobeTitle', 'wardrobePrompt', 'prompt', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(sceneId);
+      }
+    }
+  }
+}

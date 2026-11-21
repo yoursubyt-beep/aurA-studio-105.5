@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Checkroom
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -51,8 +53,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +66,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.credentials.CredentialManager
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -70,6 +75,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.ai.configureAppCheck
 import com.example.data.ReferenceRole
+import com.example.ui.auth.AuthScreen
+import com.example.ui.auth.attemptAutoSignIn
+import com.example.ui.auth.authStateFlow
+import com.example.ui.auth.signOut
 import com.example.ui.components.DirectorPresetSheet
 import com.example.ui.components.SettingsSheet
 import com.example.ui.screens.AtelierScreen
@@ -83,6 +92,8 @@ import com.example.ui.theme.PlayfairDisplayFamily
 import com.example.ui.theme.TerracottaRose
 import com.example.viewmodel.AuraStudioViewModel
 import com.example.viewmodel.StudioEvent
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 
 object AuraRoutes {
     const val STUDIO = "studio"
@@ -115,15 +126,64 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             AuraStudioTheme {
-                AuraStudioApp()
+                AuraAuthGate()
             }
+        }
+    }
+}
+
+@Composable
+fun AuraAuthGate() {
+    val auth = Firebase.auth
+    val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val credentialManager = remember(context) { CredentialManager.create(context) }
+
+    LaunchedEffect(Unit) {
+        if (auth.currentUser == null) {
+            attemptAutoSignIn(
+                context = context,
+                credentialManager = credentialManager,
+                onAuthSuccess = {},
+                onUnauthenticated = {},
+                scope = scope
+            )
+        }
+    }
+
+    val user = currentUser
+    if (user == null) {
+        AuthScreen(onAuthSuccess = {})
+    } else {
+        key(user.uid) {
+            val viewModel: AuraStudioViewModel = viewModel(
+                key = user.uid,
+                factory = AuraStudioViewModel.provideFactory(
+                    currentUserId = user.uid,
+                    currentUserDisplayName = user.displayName ?: "Aura Creator"
+                )
+            )
+            AuraStudioApp(
+                viewModel = viewModel,
+                userDisplayName = user.displayName,
+                userEmail = user.email,
+                onSignOut = {
+                    signOut(credentialManager = credentialManager, scope = scope)
+                }
+            )
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AuraStudioApp(viewModel: AuraStudioViewModel = viewModel()) {
+fun AuraStudioApp(
+    viewModel: AuraStudioViewModel,
+    userDisplayName: String?,
+    userEmail: String?,
+    onSignOut: () -> Unit
+) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route ?: AuraRoutes.STUDIO
@@ -137,6 +197,7 @@ fun AuraStudioApp(viewModel: AuraStudioViewModel = viewModel()) {
     val allCostumes by viewModel.allCostumes.collectAsStateWithLifecycle()
     val storyboardQueue by viewModel.storyboardQueue.collectAsStateWithLifecycle()
     val isStoryStreaming by viewModel.isStoryStreaming.collectAsStateWithLifecycle()
+    val cloudSyncError by viewModel.cloudSyncError.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     var showDirectorSheet by remember { mutableStateOf(false) }
@@ -175,8 +236,11 @@ fun AuraStudioApp(viewModel: AuraStudioViewModel = viewModel()) {
     if (showSettingsSheet) {
         SettingsSheet(
             preferences = preferences,
+            userDisplayName = userDisplayName,
+            userEmail = userEmail,
             onSelectModel = viewModel::setModelOption,
             onToggleAutoRefine = viewModel::setAutoSafeRefine,
+            onSignOut = onSignOut,
             onDismiss = { showSettingsSheet = false }
         )
     }
@@ -301,157 +365,196 @@ fun AuraStudioApp(viewModel: AuraStudioViewModel = viewModel()) {
                 }
             }
         ) { innerPadding ->
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
                     .background(MaterialTheme.colorScheme.background)
             ) {
-                if (useNavRail) {
-                    NavigationRail(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        modifier = Modifier.fillMaxHeight()
+                if (cloudSyncError != null) {
+                    Surface(
+                        color = TerracottaRose.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, TerracottaRose.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        shape = MaterialTheme.shapes.medium
                     ) {
-                        destinations.forEach { dest ->
-                            val selected = currentRoute == dest.route
-                            NavigationRailItem(
-                                selected = selected,
-                                onClick = {
-                                    navController.navigate(dest.route) {
-                                        launchSingleTop = true
-                                        restoreState = true
-                                        popUpTo(AuraRoutes.STUDIO) { saveState = true }
-                                    }
-                                },
-                                icon = {
-                                    val icon = if (selected) dest.selectedIcon else dest.unselectedIcon
-                                    if (dest.route == AuraRoutes.VAULT && vaultTakes.isNotEmpty()) {
-                                        BadgedBox(badge = { Badge { Text("${vaultTakes.size}") } }) {
-                                            Icon(icon, contentDescription = stringResource(id = dest.labelRes))
-                                        }
-                                    } else {
-                                        Icon(icon, contentDescription = stringResource(id = dest.labelRes))
-                                    }
-                                },
-                                label = { Text(stringResource(id = dest.labelRes)) },
-                                modifier = Modifier.testTag("rail_${dest.route}")
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Cloud sync notice: ${cloudSyncError.orEmpty()}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TerracottaRose,
+                                modifier = Modifier.weight(1f)
                             )
+                            IconButton(
+                                onClick = viewModel::dismissCloudSyncError,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Dismiss sync error",
+                                    tint = TerracottaRose,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }
 
-                NavHost(
-                    navController = navController,
-                    startDestination = AuraRoutes.STUDIO,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    composable(AuraRoutes.STUDIO) {
-                        StudioScreen(
-                            rig = rig,
-                            synthesisState = synthesisState,
-                            compiledPrompt = compiledPrompt,
-                            batchStatus = batchStatus,
-                            isLooping = isLooping,
-                            onAttachUris = { uris -> viewModel.attachReferences(uris) },
-                            onSetPrimaryRef = viewModel::setPrimaryReference,
-                            onUpdateRefRole = viewModel::updateReferenceRole,
-                            onRemoveRef = viewModel::removeReference,
-                            onClearRefs = viewModel::clearReferences,
-                            onUpdateIdentityNotes = viewModel::updateIdentityNotes,
-                            onSelectArchetype = viewModel::selectBodyArchetype,
-                            onUpdateFraming = viewModel::updateFraming,
-                            onUpdateYaw = viewModel::updateCameraYaw,
-                            onUpdateRadar = viewModel::updateRadar,
-                            onUpdateIntent = viewModel::updateIntent,
-                            onRefinePrompt = viewModel::refineIntentPrompt,
-                            onCleanPrompt = viewModel::cleanDuplicatePromptClauses,
-                            onUpdateAspectRatio = viewModel::updateAspectRatio,
-                            onUpdateBatchCount = viewModel::updateBatchCount,
-                            onToggleCycleCostumes = viewModel::updateCycleCostumesInBatch,
-                            onToggleCompare = viewModel::toggleCompareMode,
-                            onToggleAnatomyNodes = viewModel::toggleAnatomyNodes,
-                            onFocusAnatomyZone = viewModel::focusAnatomicalZone,
-                            onPromoteActiveToRef = viewModel::promoteActiveSuccessToReference,
-                            onShareActive = viewModel::shareActiveBitmap,
-                            onSynthesizeSingle = viewModel::synthesizeSingle,
-                            onRunBatch = viewModel::runBatchTryOn,
-                            onToggleLoop = viewModel::toggleContinuousLoop,
-                            onOpenAtelier = {
-                                navController.navigate(AuraRoutes.ATELIER) { launchSingleTop = true }
-                            },
-                            onQueueStoryboard = {
-                                viewModel.queueCurrentRigToStoryboard()
-                                navController.navigate(AuraRoutes.STORYBOARD) { launchSingleTop = true }
-                            },
-                            isWideLayout = isWide
-                        )
-                    }
-
-                    composable(AuraRoutes.ATELIER) {
-                        AtelierScreen(
-                            rig = rig,
-                            allCostumes = allCostumes,
-                            onAttachOutfitRef = { uris ->
-                                viewModel.attachReferences(uris, ReferenceRole.OUTFIT_DRAPE)
-                            },
-                            onSelectCategory = viewModel::selectCategory,
-                            onSearchChanged = viewModel::updateCostumeSearch,
-                            onEquipCostume = viewModel::equipCostume,
-                            onDeleteCustomCostume = viewModel::deleteCustomCostume,
-                            onUpdateMatrixOuter = viewModel::updateMatrixOuter,
-                            onUpdateMatrixInner = viewModel::updateMatrixInner,
-                            onUpdateMatrixFabric = viewModel::updateMatrixFabric,
-                            onUpdateMatrixColor = viewModel::updateMatrixColor,
-                            onRandomizeMatrix = viewModel::randomizeMatrixAndEquip,
-                            onSaveAndEquipCustom = viewModel::saveAndEquipMatrixLook,
-                            onUpdateUnderlayer = viewModel::updateUnderlayer,
-                            onUpdateSheerness = viewModel::updateSheerness,
-                            onUpdateNavel = viewModel::updateNavelStyle,
-                            onUpdateBust = viewModel::updateBust,
-                            onUpdateWaist = viewModel::updateWaist,
-                            onUpdateHips = viewModel::updateHips,
-                            onUpdateLimbs = viewModel::updateLimbSoftness,
-                            onUpdateSkin = viewModel::updateSkinSheen,
-                            onToggleChip = viewModel::toggleAttributeChip,
-                            onNavigateToStudio = {
-                                navController.navigate(AuraRoutes.STUDIO) {
-                                    launchSingleTop = true
-                                    popUpTo(AuraRoutes.STUDIO)
-                                }
+                Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    if (useNavRail) {
+                        NavigationRail(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier.fillMaxHeight()
+                        ) {
+                            destinations.forEach { dest ->
+                                val selected = currentRoute == dest.route
+                                NavigationRailItem(
+                                    selected = selected,
+                                    onClick = {
+                                        navController.navigate(dest.route) {
+                                            launchSingleTop = true
+                                            restoreState = true
+                                            popUpTo(AuraRoutes.STUDIO) { saveState = true }
+                                        }
+                                    },
+                                    icon = {
+                                        val icon = if (selected) dest.selectedIcon else dest.unselectedIcon
+                                        if (dest.route == AuraRoutes.VAULT && vaultTakes.isNotEmpty()) {
+                                            BadgedBox(badge = { Badge { Text("${vaultTakes.size}") } }) {
+                                                Icon(icon, contentDescription = stringResource(id = dest.labelRes))
+                                            }
+                                        } else {
+                                            Icon(icon, contentDescription = stringResource(id = dest.labelRes))
+                                        }
+                                    },
+                                    label = { Text(stringResource(id = dest.labelRes)) },
+                                    modifier = Modifier.testTag("rail_${dest.route}")
+                                )
                             }
-                        )
+                        }
                     }
 
-                    composable(AuraRoutes.STORYBOARD) {
-                        StoryboardScreen(
-                            scenes = storyboardQueue,
-                            isStreaming = isStoryStreaming,
-                            onAutoPopulateArc = viewModel::autoPopulateStoryArc,
-                            onQueueCurrentRig = viewModel::queueCurrentRigToStoryboard,
-                            onRunStream = viewModel::runStoryboardStream,
-                            onStopStream = viewModel::stopStoryboardStream,
-                            onRemoveScene = viewModel::removeStoryboardScene,
-                            onClearStoryboard = viewModel::clearStoryboard
-                        )
-                    }
+                    NavHost(
+                        navController = navController,
+                        startDestination = AuraRoutes.STUDIO,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        composable(AuraRoutes.STUDIO) {
+                            StudioScreen(
+                                rig = rig,
+                                synthesisState = synthesisState,
+                                compiledPrompt = compiledPrompt,
+                                batchStatus = batchStatus,
+                                isLooping = isLooping,
+                                onAttachUris = { uris -> viewModel.attachReferences(uris) },
+                                onSetPrimaryRef = viewModel::setPrimaryReference,
+                                onUpdateRefRole = viewModel::updateReferenceRole,
+                                onRemoveRef = viewModel::removeReference,
+                                onClearRefs = viewModel::clearReferences,
+                                onUpdateIdentityNotes = viewModel::updateIdentityNotes,
+                                onSelectArchetype = viewModel::selectBodyArchetype,
+                                onUpdateFraming = viewModel::updateFraming,
+                                onUpdateYaw = viewModel::updateCameraYaw,
+                                onUpdateRadar = viewModel::updateRadar,
+                                onUpdateIntent = viewModel::updateIntent,
+                                onRefinePrompt = viewModel::refineIntentPrompt,
+                                onCleanPrompt = viewModel::cleanDuplicatePromptClauses,
+                                onUpdateAspectRatio = viewModel::updateAspectRatio,
+                                onUpdateBatchCount = viewModel::updateBatchCount,
+                                onToggleCycleCostumes = viewModel::updateCycleCostumesInBatch,
+                                onToggleCompare = viewModel::toggleCompareMode,
+                                onToggleAnatomyNodes = viewModel::toggleAnatomyNodes,
+                                onFocusAnatomyZone = viewModel::focusAnatomicalZone,
+                                onPromoteActiveToRef = viewModel::promoteActiveSuccessToReference,
+                                onShareActive = viewModel::shareActiveBitmap,
+                                onSynthesizeSingle = viewModel::synthesizeSingle,
+                                onRunBatch = viewModel::runBatchTryOn,
+                                onToggleLoop = viewModel::toggleContinuousLoop,
+                                onOpenAtelier = {
+                                    navController.navigate(AuraRoutes.ATELIER) { launchSingleTop = true }
+                                },
+                                onQueueStoryboard = {
+                                    viewModel.queueCurrentRigToStoryboard()
+                                    navController.navigate(AuraRoutes.STORYBOARD) { launchSingleTop = true }
+                                },
+                                isWideLayout = isWide
+                            )
+                        }
 
-                    composable(AuraRoutes.VAULT) {
-                        VaultScreen(
-                            takes = vaultTakes,
-                            onLoadIntoViewport = { take ->
-                                viewModel.loadVaultTakeIntoViewport(take)
-                                navController.navigate(AuraRoutes.STUDIO) {
-                                    launchSingleTop = true
-                                    popUpTo(AuraRoutes.STUDIO)
+                        composable(AuraRoutes.ATELIER) {
+                            AtelierScreen(
+                                rig = rig,
+                                allCostumes = allCostumes,
+                                onAttachOutfitRef = { uris ->
+                                    viewModel.attachReferences(uris, ReferenceRole.OUTFIT_DRAPE)
+                                },
+                                onSelectCategory = viewModel::selectCategory,
+                                onSearchChanged = viewModel::updateCostumeSearch,
+                                onEquipCostume = viewModel::equipCostume,
+                                onDeleteCustomCostume = viewModel::deleteCustomCostume,
+                                onUpdateMatrixOuter = viewModel::updateMatrixOuter,
+                                onUpdateMatrixInner = viewModel::updateMatrixInner,
+                                onUpdateMatrixFabric = viewModel::updateMatrixFabric,
+                                onUpdateMatrixColor = viewModel::updateMatrixColor,
+                                onRandomizeMatrix = viewModel::randomizeMatrixAndEquip,
+                                onSaveAndEquipCustom = viewModel::saveAndEquipMatrixLook,
+                                onUpdateUnderlayer = viewModel::updateUnderlayer,
+                                onUpdateSheerness = viewModel::updateSheerness,
+                                onUpdateNavel = viewModel::updateNavelStyle,
+                                onUpdateBust = viewModel::updateBust,
+                                onUpdateWaist = viewModel::updateWaist,
+                                onUpdateHips = viewModel::updateHips,
+                                onUpdateLimbs = viewModel::updateLimbSoftness,
+                                onUpdateSkin = viewModel::updateSkinSheen,
+                                onToggleChip = viewModel::toggleAttributeChip,
+                                onNavigateToStudio = {
+                                    navController.navigate(AuraRoutes.STUDIO) {
+                                        launchSingleTop = true
+                                        popUpTo(AuraRoutes.STUDIO)
+                                    }
                                 }
-                            },
-                            onPromoteToReference = viewModel::promoteTakeToReference,
-                            onShareTake = viewModel::shareVaultTake,
-                            onDeleteTake = viewModel::deleteTake,
-                            onExportAllZip = viewModel::exportAllVaultAsZip,
-                            onClearVault = viewModel::clearVault,
-                            isWideLayout = isWide
-                        )
+                            )
+                        }
+
+                        composable(AuraRoutes.STORYBOARD) {
+                            StoryboardScreen(
+                                scenes = storyboardQueue,
+                                isStreaming = isStoryStreaming,
+                                onAutoPopulateArc = viewModel::autoPopulateStoryArc,
+                                onQueueCurrentRig = viewModel::queueCurrentRigToStoryboard,
+                                onRunStream = viewModel::runStoryboardStream,
+                                onStopStream = viewModel::stopStoryboardStream,
+                                onRemoveScene = viewModel::removeStoryboardScene,
+                                onClearStoryboard = viewModel::clearStoryboard
+                            )
+                        }
+
+                        composable(AuraRoutes.VAULT) {
+                            VaultScreen(
+                                takes = vaultTakes,
+                                onLoadIntoViewport = { take ->
+                                    viewModel.loadVaultTakeIntoViewport(take)
+                                    navController.navigate(AuraRoutes.STUDIO) {
+                                        launchSingleTop = true
+                                        popUpTo(AuraRoutes.STUDIO)
+                                    }
+                                },
+                                onPromoteToReference = viewModel::promoteTakeToReference,
+                                onShareTake = viewModel::shareVaultTake,
+                                onDeleteTake = viewModel::deleteTake,
+                                onExportAllZip = viewModel::exportAllVaultAsZip,
+                                onClearVault = viewModel::clearVault,
+                                isWideLayout = isWide
+                            )
+                        }
                     }
                 }
             }
