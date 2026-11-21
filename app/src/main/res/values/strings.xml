@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Aura Studio</string>
+    <string name="nav_studio">Studio</string>
+    <string name="nav_atelier">Atelier</string>
+    <string name="nav_storyboard">Storyboard</string>
+    <string name="nav_vault">Vault</string>
+    <string name="cd_settings">Studio Engine Settings</string>
+    <string name="cd_director">Quick Director Presets</string>
+    <string name="cd_add_reference">Attach Reference Photo</string>
+    <string name="cd_generated_viewport">Synthesized Studio Frame</string>
+    <string name="cd_atelier_backdrop">Atelier Studio Stage Backdrop</string>
+</resources>
